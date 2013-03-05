@@ -13,7 +13,7 @@ var App = Em.Application.create({
   }(),
 
   ready: function() {
-    var index_url = [App.store.adapter.url, "tasks"].join('/');
+    var index_url = [App.store.adapter.url, "twitter"].join('/');
 
     // Let's check if the `tasks` index exists...
     //
@@ -59,35 +59,9 @@ App.Models.Task = DS.Model.extend({
 App.Models.Task.reopenClass({
   // Define the index and type for elasticsearch
   //
-  url: 'tasks/task'
+  url: '_twittersearch/twitter'
 });
 
-
-/*
-curl -XDELETE localhost:9200/_river/twitter
-curl -XPUT localhost:9200/_river/twitter/_meta -d '
- {
-     "type" : "twitter",
-     "twitter" : {
-         "oauth" : {
-             "consumerKey" : "OnuxrQuz6ezYjzEWPMsA",
-             "consumerSecret" : "DzzIl3w3QVvAEnZaDaEufxAR683g540qnBhfhF9CD0",
-             "accessToken" : "3702441-rAWK1E0dudnZmsHFe6odubyuOWDh2KeomBCEHbhNNE",
-             "accessTokenSecret" : "ZbvOMntDcnFbcIHIr895q7hdrjVb1lpx2RQgUcU"
-         },
-         "filter" : {
-             "tracks" : "eojd,vakantie,ooit"
-         }
-     },
-     "index" : {
-         "index" : "twitter",
-         "type" : "status",
-         "bulk_size" : 1
-     }
- }
-'
-
-*/
 
 App.Controllers.tasks = Ember.ArrayController.create({
   // TODO: Display sorted with `sortProperties`,
@@ -95,68 +69,9 @@ App.Controllers.tasks = Ember.ArrayController.create({
   //
   content: App.Models.Task.find(),
 
-  updateRiver: function() {
-    var tasks = App.Models.Task.find();
-    var cnt = 0;
-    var allFollow = new Ember.Set();
-    var allKeywords = new Ember.Set();
-
-    tasks.forEach(function(item, index, enumerable) {
-      var follow = item.get("follow").split(",");
-      var keywords = item.get("keywords").split(",");
-      allFollow.addObjects(follow);
-      allKeywords.addObjects(keywords);
-    });
-
-    var follow = allFollow.toArray();
-    var keywords = allKeywords.toArray();
-
-    $.ajax({
-      type: 'GET',
-      url: App.elasticsearch_url + "/_river/twitter/_meta",
-      dataType: 'json',
-      success: function (r) {
-        var source = r._source;
-        var oldTracks = source.twitter.filter.tracks;
-        var oldFollow = source.twitter.filter.follow;
-
-        source.twitter.filter.tracks = keywords.join(",");
-        source.twitter.filter.follow = follow.join(",");
-
-        $.ajax({
-          type: 'DELETE',
-          url: '/_river/twitter',
-          success: function(r2) {
-            $.ajax({
-              type: 'PUT',
-              url: '/_river/twitter/_meta',
-              data: JSON.stringify(source),
-              dataType: 'json',
-              succes: function(r3) {
-              },
-              error: function (r4) {
-                source.twitter.filter.tracks = oldFollow;
-                source.twitter.filter.follow = oldTracks;
-                $.ajax({
-                  type: 'PUT',
-                  url: '/_river/twitter/_meta',
-                  data: JSON.stringify(source),
-                  dataType: 'json',
-                  succes: function(r3) {
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-    });
-  },
-
   createTask: function(value, value2, value3) {
     var task = App.Models.Task.createRecord({ keywords: value, follow: value2, ignore: value3 });
     App.store.commit();
-    App.Controllers.tasks.updateRiver();
   },
 
   removeTask: function(event) {
@@ -164,7 +79,6 @@ App.Controllers.tasks = Ember.ArrayController.create({
       var task = event.context;
       task.deleteRecord();
       App.store.commit();
-      App.Controllers.tasks.updateRiver();
     }
   }
 });
