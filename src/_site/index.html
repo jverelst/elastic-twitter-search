@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <title>Twitter Search widgets</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <h1>
+    Twitter Search widgets 
+  </h1>
+
+  <script type="text/x-handlebars">
+    | {{App.Controllers.twitter.bla}} |
+  </script>
+
+  <script type="text/x-handlebars">
+    {{#view App.CreateView}}
+      Keywords: {{view Ember.TextField viewName="keywords" placeholder=""}} <br />
+      Follow: {{view Ember.TextField viewName="follow" placeholder=""}} <br />
+      Ignore: {{view Ember.TextField viewName="ignore" placeholder=""}} <br />
+      <button {{action "create"}}>Create widget</button>
+    {{/view}}
+
+  </script>
+
+  <script type="text/x-handlebars">
+    {{#if App.elasticsearch_unavailable}}
+      <p class="error">
+        <span class="icon-exclamation-sign"></span>
+        It seems that elasticsearch is not running on this machine
+        (<a href="http://localhost:9200">localhost:9200</a>)?
+      </p>
+    {{/if}}
+  </script>
+
+  <script type="text/x-handlebars">
+  <ul id="tasks">
+    {{#each App.Controllers.tasks}}
+      <li class="task">
+        <label>{{keywords}}, {{follow}}, {{ignore}}</label>
+        <a class="remove-task" title="[delete]" {{action removeTask this target="App.Controllers.tasks"}}>
+          <span class="icon-remove">&nbsp;</span>
+        </a>
+      </li>
+
+    {{/each}}
+  </ul>
+  </script>
+
+  <script src="ember-data-elasticsearch/tests/lib/jquery-1.7.2.js"></script>
+  <script src="ember-data-elasticsearch/tests/lib/handlebars-1.0.0.beta.6.js"></script>
+  <script src="ember-data-elasticsearch/tests/lib/ember-1.0.0-pre.js"></script>
+  <script src="ember-data-elasticsearch/tests/lib/ember-data.js"></script>
+  <script src="ember-data-elasticsearch/ember-data/lib/adapters/elasticsearch_adapter.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
