@@ -9,6 +9,8 @@ import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
 
 import org.elasticsearch.client.Client;
 import org.elasticsearch.index.get.GetField;
@@ -36,7 +38,6 @@ public class TwitterSearchAction extends BaseRestHandler {
 
     @Inject public TwitterSearchAction(Settings settings, Client client, RestController controller) {
         super(settings, client);
-
         // Define REST endpoints
 
         // Get a list of all tasks, mapped to 'listTasks'
@@ -49,30 +50,55 @@ public class TwitterSearchAction extends BaseRestHandler {
         controller.registerHandler(DELETE, "/_twittersearch/{index}/{id}", this);
 
         // Add a task, mapped to 'addTask'
-        controller.registerHandler(PUT, "/_twittersearch/{index}/", this);
+        controller.registerHandler(POST, "/_twittersearch/{index}/", this);
 
         // Update a specific task
-        controller.registerHandler(PUT, "/_twittersearch/{index}/{id}", this);
+        controller.registerHandler(POST, "/_twittersearch/{index}/{id}", this);
+    }
+
+    private void updateRiver() {
+      // 1. Get the twitter oAUTH stuff
+      // 2. List over all tasks
+      // 3. Create a uniqe list of IDs to follow / keywords to track
+      // 4. Update the river
+    }
+
+    private void historicSearch(String id) {
+      // do a historic search for the given tas, so we can populate the index with some content
+    }
+
+    private String findUserIds(String screennames) {
+      // convert the usernames to userids, and save them with the object
+      return "";
     }
 
     private void deleteTask(final RestRequest request, final RestChannel channel, final String index, final String id) {
-        // TODO:
-        // - Delete the task
-        // - Fetch all tasks, create river configuration
-        // - Re-initialize the river
+        String type = "_meta".equals(id) ? "twitterconfig" : TYPE;
+        DeleteResponse response = client.prepareDelete(index, type, id).execute().actionGet();
+        try {
+            XContentBuilder builder = restContentBuilder(request)
+              .startObject()
+                .field("id", response.getId())
+                .field("version", response.getVersion())
+              .endObject();
+            channel.sendResponse(new XContentRestResponse(request, OK, builder));
+        } catch (Exception e) {
+            try {
+                channel.sendResponse(new XContentThrowableRestResponse(request, e));
+            } catch (IOException e1) {
+                logger.error("Failed to send failure response", e1);
+            }
+        }
+        updateRiver();
     }
 
     private void listTasks(final RestRequest request, final RestChannel channel, final String index) {
-        // TODO:
-        // - Fetch all tasks, return data
-        logger.info("listTasks()");
         final SearchRequest searchRequest = new SearchRequest(index);
         searchRequest.types(TYPE);
         searchRequest.listenerThreaded(false);
 
         SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).execute().actionGet();
         try {
-            logger.info("Hits: " + searchResponse.hits().totalHits());
             XContentBuilder builder = restContentBuilder(request);
             builder.startObject();
             searchResponse.toXContent(builder, request);
@@ -87,30 +113,55 @@ public class TwitterSearchAction extends BaseRestHandler {
             }
         }
 
-        logger.info("listTasks() finished");
     }
 
     private void addTask(final RestRequest request, final RestChannel channel, final String index) {
-        // TODO:
-        // - Add the task
-        // - Fetch all tasks, create river configuration
-        // - Re-initialize the river
-        // - Do a historic search
-        // - 
+        IndexResponse response = client.prepareIndex(index, TYPE).setSource(request.content().toBytes()).execute().actionGet();
+        try {
+            XContentBuilder builder = restContentBuilder(request)
+              .startObject()
+                .field("id", response.getId())
+              .endObject();
+            channel.sendResponse(new XContentRestResponse(request, OK, builder));
+        } catch (Exception e) {
+            try {
+                channel.sendResponse(new XContentThrowableRestResponse(request, e));
+            } catch (IOException e1) {
+                logger.error("Failed to send failure response", e1);
+            }
+        }
+
+        historicSearch(response.getId());
+        updateRiver();
     }
 
     private void updateTask(final RestRequest request, final RestChannel channel, final String index, final String id) {
-        // TODO:
-        // - Update the task
-        // - Fetch all tasks, create river configuration
-        // - Re-initialize the river
+        String type = "_meta".equals(id) ? "twitterconfig" : TYPE;
+        IndexResponse response = client.prepareIndex(index, type, id).setSource(request.content().toBytes()).execute().actionGet();
+        try {
+            XContentBuilder builder = restContentBuilder(request)
+              .startObject()
+                .field("id", response.getId())
+                .field("version", response.getVersion())
+              .endObject();
+            channel.sendResponse(new XContentRestResponse(request, OK, builder));
+        } catch (Exception e) {
+            try {
+                channel.sendResponse(new XContentThrowableRestResponse(request, e));
+            } catch (IOException e1) {
+                logger.error("Failed to send failure response", e1);
+            }
+        }
+
+        historicSearch(response.getId());
+        updateRiver();
     }
     
 
     private void getTask(final RestRequest request, final RestChannel channel, final String index, final String id) {
-        GetResponse response = client.prepareGet(index, TYPE, id).setFields("keywords", "users", "follow", "ignore").execute().actionGet();
+        String type = "_meta".equals(id) ? "twitterconfig" : TYPE;
+        GetResponse response = client.prepareGet(index, type, id).execute().actionGet();
         try {
-            logger.info("exists? " + response.exists());
             XContentBuilder builder = restContentBuilder(request);
             response.toXContent(builder, request);
 
@@ -129,10 +180,8 @@ public class TwitterSearchAction extends BaseRestHandler {
     }
 
     public void handleRequest(final RestRequest request, final RestChannel channel) {
-        logger.info("TwitterSearchAction.handleRequest called");
         final String index = request.hasParam("index") ? request.param("index") : "";
         final String id = request.hasParam("id") ? request.param("id") : "";
-        logger.info("Index: " + index + ", ID: " + id + ", method: " + request.method());
 
         switch(request.method()) {
             case DELETE:
@@ -145,9 +194,11 @@ public class TwitterSearchAction extends BaseRestHandler {
                     getTask(request, channel, index, id);
                 }
                 break;
-            case PUT:
+            case POST:
                 if ("".equals(id)) {
                     addTask(request, channel, index);
+                } else if ("_search".equals(id)) {
+                    listTasks(request, channel, index);
                 } else {
                     updateTask(request, channel, index, id);
                 }
