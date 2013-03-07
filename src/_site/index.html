@@ -15,9 +15,8 @@
 
   <script type="text/x-handlebars">
     {{#view App.CreateView}}
-      Keywords: {{view Ember.TextField viewName="keywords" placeholder=""}} <br />
+      Keywords: {{view Ember.TextField viewName="track" placeholder=""}} <br />
       Follow: {{view Ember.TextField viewName="follow" placeholder=""}} <br />
-      Ignore: {{view Ember.TextField viewName="ignore" placeholder=""}} <br />
       <button {{action "create"}}>Create widget</button>
     {{/view}}
 
@@ -37,12 +36,11 @@
   <ul id="tasks">
     {{#each App.Controllers.tasks}}
       <li class="task">
-        <label>{{keywords}}, {{follow}}, {{ignore}}</label>
+        <label>{{follow}}, {{track}}</label>
         <a class="remove-task" title="[delete]" {{action removeTask this target="App.Controllers.tasks"}}>
           <span class="icon-remove">&nbsp;</span>
         </a>
       </li>
-
     {{/each}}
   </ul>
   </script>
