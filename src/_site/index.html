@@ -10,10 +10,6 @@
   </h1>
 
   <script type="text/x-handlebars">
-    | {{App.Controllers.twitter.bla}} |
-  </script>
-
-  <script type="text/x-handlebars">
     {{#view App.CreateView}}
       Keywords: {{view Ember.TextField viewName="track" placeholder=""}} <br />
       Follow: {{view Ember.TextField viewName="follow" placeholder=""}} <br />
@@ -36,7 +32,9 @@
   <ul id="tasks">
     {{#each App.Controllers.tasks}}
       <li class="task">
-        <label>{{follow}}, {{track}}</label>
+        ID: {{id}} <br />
+        Following userids: {{follow}} <br />
+        Tracking hashtags: {{track}} <br />
         <a class="remove-task" title="[delete]" {{action removeTask this target="App.Controllers.tasks"}}>
           <span class="icon-remove">&nbsp;</span>
         </a>

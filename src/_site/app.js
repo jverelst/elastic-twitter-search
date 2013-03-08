@@ -45,6 +45,7 @@ App.store = DS.Store.create({
 App.Models.Task = DS.Model.extend({
   // Properties:
   //
+  id:         DS.attr('string'),
   track:      DS.attr('string'),
   follow:     DS.attr('string'),
 
