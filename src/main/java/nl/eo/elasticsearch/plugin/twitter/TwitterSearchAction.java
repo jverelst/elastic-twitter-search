@@ -17,9 +17,9 @@ import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.index.get.GetField;
 import org.elasticsearch.index.query.FilterBuilders;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.FilterBuilder;
 
 import org.elasticsearch.client.Client;
-
 
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.unit.TimeValue;
@@ -30,6 +30,7 @@ import org.elasticsearch.common.xcontent.XContentBuilderString;
 import org.elasticsearch.common.xcontent.XContentFactory;
 
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.sort.SortOrder;
 
 import org.elasticsearch.rest.*;
 
@@ -141,16 +142,6 @@ public class TwitterSearchAction extends BaseRestHandler {
         } catch (IOException e) {
             logger.error("Exception while building new river: {}", e);
         }
-
-        // TODO:
-        // Create the river definition
-        // Remove the river
-        // Add the river
-        
-        // 1. Get the twitter oAUTH stuff
-        // 2. List over all tasks
-        // 3. Create a uniqe list of IDs to follow / keywords to track
-        // 4. Update the river
     }
 
     private void historicSearch(String id) {
@@ -258,25 +249,75 @@ public class TwitterSearchAction extends BaseRestHandler {
 
     private void getTweets(final RestRequest request, final RestChannel channel, final String index, final String id, final String tweets) {
         GetResponse taskResponse = client.prepareGet(index, TYPE, id).execute().actionGet();
+        Map<String, Object> task = taskResponse.getSource();
+
+        String follow = (String)task.get("follow");
+        String track = (String)task.get("track");
+        String block = "";
+
         try {
             // Get the response, and corresponding fields
             // Do a search in Elastic
             // Return the results
+            ArrayList<FilterBuilder> mayMatch = new ArrayList<FilterBuilder>();
+            if (!"".equals(follow)) {
+              mayMatch.add(FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(follow)));
+            }
+            if (!"".equals(track)) {
+              mayMatch.add(FilterBuilders.termFilter("hashtag.text", Strings.commaDelimitedListToStringArray(track)));
+            }
+            ArrayList<FilterBuilder> mustMatch = new ArrayList<FilterBuilder>();
+
+            mustMatch.add(FilterBuilders.orFilter(mayMatch.toArray(new FilterBuilder[0])));
+            if (!"".equals(block)) {
+              mustMatch.add(
+                FilterBuilders.notFilter(
+                  FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(block))
+                )
+              );
+            }
+
+            FilterBuilder filter = FilterBuilders.andFilter(mustMatch.toArray(new FilterBuilder[0]));
+
             SearchResponse response = client.prepareSearch(index)
                     .setTypes("status")
                     .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
-                    .setQuery(QueryBuilders.termQuery("multi", "test"))             // Query
-                    .setFilter(FilterBuilders.rangeFilter("age").from(12).to(18))   // Filter
-                    .setFrom(0).setSize(60).setExplain(true)
+                    .setFilter(filter)
+                    .setFrom(0).setSize(10).setExplain(true)
+                    .addSort("created_at", SortOrder.DESC)
                     .execute()
                     .actionGet();
 
-            XContentBuilder builder = restContentBuilder(request);
+            XContentBuilder builder = XContentFactory.jsonBuilder();
             builder.startObject();
-            response.toXContent(builder, request);
+            builder.field("completed_in", ((float)response.tookInMillis() / 1000));
+            if (response.hits().totalHits() > 0) {
+                builder.field("max_id", Long.decode(response.hits().getAt(0).id()).longValue());
+                builder.field("max_id_str", response.hits().getAt(0).id());
+            }
+            builder.startArray("results");
+            for (SearchHit hit : response.hits()) {
+                builder.startObject();
+                Map<String, Object> source = hit.getSource();
+                builder.field("created_at", source.get("created_at"));
+                builder.field("from_user", ((Map)source.get("user")).get("screen_name"));
+                builder.field("from_user_id", ((Map)source.get("user")).get("id"));
+                builder.field("from_user_id_str", ((Map)source.get("user")).get("id"));
+                builder.field("from_user_name", ((Map)source.get("user")).get("name"));
+                builder.field("profile_image_url", ((Map)source.get("user")).get("profile_image_url"));
+                builder.field("profile_image_url_https", ((Map)source.get("user")).get("profile_image_url_https"));
+                builder.field("id", Long.decode(hit.id()).longValue());
+                builder.field("id_str", hit.id());
+                builder.field("text", source.get("text"));
+                builder.field("source", source.get("source"));
+                builder.endObject();
+            }
+            builder.endArray();
             builder.endObject();
             channel.sendResponse(new XContentRestResponse(request, OK, builder));
+
         } catch (Exception e) {
+            e.printStackTrace();
             try {
                 channel.sendResponse(new XContentThrowableRestResponse(request, e));
             } catch (IOException e1) {
@@ -328,6 +369,7 @@ public class TwitterSearchAction extends BaseRestHandler {
                 }
                 break;
             case POST:
+            case PUT:
                 if ("".equals(id)) {
                     addTask(request, channel, index);
                 } else if ("_search".equals(id)) {
