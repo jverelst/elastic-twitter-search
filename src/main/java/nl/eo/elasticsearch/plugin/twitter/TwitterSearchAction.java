@@ -302,7 +302,7 @@ public class TwitterSearchAction extends BaseRestHandler {
                 builder.field("created_at", source.get("created_at"));
                 builder.field("from_user", ((Map)source.get("user")).get("screen_name"));
                 builder.field("from_user_id", ((Map)source.get("user")).get("id"));
-                builder.field("from_user_id_str", ((Map)source.get("user")).get("id"));
+                builder.field("from_user_id_str", "" + ((Map)source.get("user")).get("id"));
                 builder.field("from_user_name", ((Map)source.get("user")).get("name"));
                 builder.field("profile_image_url", ((Map)source.get("user")).get("profile_image_url"));
                 builder.field("profile_image_url_https", ((Map)source.get("user")).get("profile_image_url_https"));
