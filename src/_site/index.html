@@ -11,8 +11,11 @@
 
   <script type="text/x-handlebars">
     {{#view App.CreateView}}
-      Keywords: {{view Ember.TextField viewName="track" placeholder=""}} <br />
-      Follow: {{view Ember.TextField viewName="follow" placeholder=""}} <br />
+      <h2>Create a new widget</h2>
+      You can use comma seperated lists here, this will result in a big 'OR' query <br /><br />
+      Hashtags: {{view Ember.TextField viewName="track" placeholder="comma,seperated,list,of,hashtags"}} (without the #!) <br />
+      Follow: {{view Ember.TextField viewName="follow" placeholder="comma,seperated,list,of,usernames"}} <br />
+      Block: {{view Ember.TextField viewName="block" placeholder="comma,seperated,list,of,usernames"}} <br />
       <button {{action "create"}}>Create widget</button>
     {{/view}}
 
@@ -33,10 +36,13 @@
     {{#each App.Controllers.tasks}}
       <li class="task">
         ID: {{id}} <br />
-        Following userids: {{follow}} <br />
         Tracking hashtags: {{track}} <br />
+        Following userids: {{follow}} <br />
+        Blocking userids: {{block}} <br />
+        Tweets: <a href="examples/jta/index.html?id={{unbound id}}">Click here</a> <br />
+        Histograms: <a href="examples/histogram/index.html?id={{unbound id}}">Click here</a> <br />
         <a class="remove-task" title="[delete]" {{action removeTask this target="App.Controllers.tasks"}}>
-          <span class="icon-remove">&nbsp;</span>
+          (delete)
         </a>
       </li>
     {{/each}}

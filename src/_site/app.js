@@ -48,6 +48,7 @@ App.Models.Task = DS.Model.extend({
   id:         DS.attr('string'),
   track:      DS.attr('string'),
   follow:     DS.attr('string'),
+  block:     DS.attr('string'),
 
   // Observe changes and persist them in elasticsearch
   //
@@ -69,8 +70,8 @@ App.Controllers.tasks = Ember.ArrayController.create({
   //
   content: App.Models.Task.find(),
 
-  createTask: function(value, value2) {
-    var task = App.Models.Task.createRecord({ follow: value, track: value2 });
+  createTask: function(value1, value2, value3) {
+    var task = App.Models.Task.createRecord({ track: value1, follow: value2, block: value3 });
     App.store.commit();
   },
 
@@ -85,6 +86,6 @@ App.Controllers.tasks = Ember.ArrayController.create({
 
 App.CreateView = Ember.View.extend({
   create: function() {
-    App.Controllers.tasks.createTask(this.get('follow').get('value'), this.get('track').get('value'));
+    App.Controllers.tasks.createTask(this.get('track').get('value'), this.get('follow').get('value'), this.get('block').get('value'));
   }
 });
