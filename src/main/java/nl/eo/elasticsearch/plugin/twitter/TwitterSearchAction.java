@@ -26,11 +26,16 @@ import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.common.xcontent.XContentBuilderString;
 import org.elasticsearch.common.xcontent.XContentFactory;
 
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.sort.SortOrder;
+import org.elasticsearch.search.facet.Facet;
+import org.elasticsearch.search.facet.FacetBuilders;
+import org.elasticsearch.search.facet.datehistogram.DateHistogramFacet;
+import org.elasticsearch.search.facet.terms.TermsFacet;
 
 import org.elasticsearch.rest.*;
 
@@ -73,6 +78,10 @@ public class TwitterSearchAction extends BaseRestHandler {
         controller.registerHandler(POST, "/_twittersearch/{index}/{id}", this);
     }
 
+    /**
+     * Update the Twitter River (with given name), because apparently our configuration of hashtags or 
+     * usernames has changed (by an update, delete or insert).
+     */
     private void updateRiver(String index) {
         logger.info("Updating river");
         GetResponse taskResponse = client.prepareGet(index, "twitterconfig", "_meta").execute().actionGet();
@@ -81,7 +90,7 @@ public class TwitterSearchAction extends BaseRestHandler {
         final SearchRequest searchRequest = new SearchRequest(index);
         searchRequest.types(TYPE);
         searchRequest.listenerThreaded(false);
-        SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).execute().actionGet();
+        SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).setSize(10000).execute().actionGet();
 
         Set<String> toFollow = new TreeSet<String>();
         Set<String> toTrack = new TreeSet<String>();
@@ -97,12 +106,6 @@ public class TwitterSearchAction extends BaseRestHandler {
 
         TwitterUtil tu = new TwitterUtil(twitterConfig);
         List<String> toFollowIDs = Arrays.asList(tu.getUserIds(toFollow.toArray(new String[0])));
-
-/*
-        DeleteResponse response = client.prepareDelete("_river", "twitter", "_meta")
-           .setRefresh(true)
-           .execute().actionGet();
-           */
 
         ClusterStateResponse resp = client.admin().cluster().prepareState().execute().actionGet();
         Map mappings = resp.state().metaData().index("_river").mappings();
@@ -145,9 +148,12 @@ public class TwitterSearchAction extends BaseRestHandler {
     }
 
     private void historicSearch(String id) {
-      // do a historic search for the given tas, so we can populate the index with some content
+      // TODO: do a historic search for the given tas, so we can populate the index with some content
     }
 
+    /**
+     * Return a list of userids for the list of screennames
+     */
     private String[] findUserIds(String screennames, Map<String, Object> config) {
         TwitterUtil tu = new TwitterUtil(config);
         return tu.getUserIds(Strings.commaDelimitedListToStringArray(screennames));
@@ -180,7 +186,7 @@ public class TwitterSearchAction extends BaseRestHandler {
         searchRequest.types(TYPE);
         searchRequest.listenerThreaded(false);
 
-        SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).execute().actionGet();
+        SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).setSize(10000).execute().actionGet();
         try {
             XContentBuilder builder = restContentBuilder(request);
             builder.startObject();
@@ -195,12 +201,21 @@ public class TwitterSearchAction extends BaseRestHandler {
                 logger.error("Failed to send failure response", e1);
             }
         }
-
     }
 
     private void addTask(final RestRequest request, final RestChannel channel, final String index) {
+        Map<String,Object> source = XContentHelper.convertToMap(request.content().toBytes(), false).v2();
+
+        GetResponse taskResponse = client.prepareGet(index, "twitterconfig", "_meta").execute().actionGet();
+        Map<String, Object> twitterConfig = taskResponse.getSource();
+
+        String follow = (String)source.get("follow");
+        String[] ids = findUserIds(follow, twitterConfig);
+
+        source.put("follow_ids", Strings.arrayToCommaDelimitedString(ids));
+
         IndexResponse response = client.prepareIndex(index, TYPE)
-          .setSource(request.content().toBytes())
+          .setSource(source)
           .setRefresh(true)
           .execute().actionGet();
         try {
@@ -245,31 +260,43 @@ public class TwitterSearchAction extends BaseRestHandler {
         historicSearch(response.getId());
         updateRiver(index);
     }
-    
 
     private void getTweets(final RestRequest request, final RestChannel channel, final String index, final String id, final String tweets) {
         GetResponse taskResponse = client.prepareGet(index, TYPE, id).execute().actionGet();
         Map<String, Object> task = taskResponse.getSource();
 
-        String follow = (String)task.get("follow");
+        String follow = (String)task.get("follow_ids");
         String track = (String)task.get("track");
-        String block = "";
+        String block = (String)task.get("block");
+
+        String interval = request.hasParam("interval") ? request.param("interval") : "day";
+        long start = request.hasParam("start") ? Long.decode(request.param("start")).longValue() : 0;
+        long stop = request.hasParam("stop") ? Long.decode(request.param("stop")).longValue() : 0;
+        int size = request.hasParam("size") ? Integer.parseInt(request.param("size")) : 10;
+        long max_id = request.hasParam("max_id") ? Long.decode(request.param("max_id")).longValue() : 0;
+        long page = request.hasParam("page") ? Long.decode(request.param("page")).longValue() : 0;
 
         try {
-            // Get the response, and corresponding fields
-            // Do a search in Elastic
-            // Return the results
-            ArrayList<FilterBuilder> mayMatch = new ArrayList<FilterBuilder>();
-            if (!"".equals(follow)) {
-              mayMatch.add(FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(follow)));
-            }
-            if (!"".equals(track)) {
-              mayMatch.add(FilterBuilders.termFilter("hashtag.text", Strings.commaDelimitedListToStringArray(track)));
-            }
+            // The elasticsearch query will be in the form:
+            // ((user.screen_name IN follow) OR (hashtag.text IN track)) AND NOT (user.screen_name IN block)
+            // So, we use a TermFilter for 'user.screen_name' and a TermFilter for 'hashtag.text'
+            // These are added to the 'mayMatch' array, and added together with a OrFilter
+            // Then we use an ANDFilter and a NOTFilter for the usernames we need to block
             ArrayList<FilterBuilder> mustMatch = new ArrayList<FilterBuilder>();
 
+            // First: which hashtags & screennames do we follow?
+            ArrayList<FilterBuilder> mayMatch = new ArrayList<FilterBuilder>();
+            if (follow != null && !"".equals(follow)) {
+              mayMatch.add(FilterBuilders.termFilter("user.id", Strings.commaDelimitedListToStringArray(follow)));
+            }
+            if (track != null && !"".equals(track)) {
+              mayMatch.add(FilterBuilders.termFilter("hashtag.text", Strings.commaDelimitedListToStringArray(track)));
+            }
             mustMatch.add(FilterBuilders.orFilter(mayMatch.toArray(new FilterBuilder[0])));
-            if (!"".equals(block)) {
+
+            // Second: which screennames do we remove from the searchresults?
+            if (block != null && !"".equals(block)) {
+              logger.info("Adding blocklist: [{}]", block);
               mustMatch.add(
                 FilterBuilders.notFilter(
                   FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(block))
@@ -277,21 +304,41 @@ public class TwitterSearchAction extends BaseRestHandler {
               );
             }
 
+            // Third: maybe we only need a specific timespan
+            if (start > 0) {
+                mustMatch.add(FilterBuilders.rangeFilter("created_at").from(start));
+            }
+            if (stop > 0) {
+                mustMatch.add(FilterBuilders.rangeFilter("created_at").to(stop));
+            }
+
+            // We do NOT support paging! So if a (legacy) widget provides a page-parameter, we just don't return any data
+            if (page > 1) {
+                size = 0;
+            }
+
+            // Done: creating the filter
             FilterBuilder filter = FilterBuilders.andFilter(mustMatch.toArray(new FilterBuilder[0]));
 
+            // Fetch the resulsts, ordered by 'created_at' descending (newest tweets first)
             SearchResponse response = client.prepareSearch(index)
                     .setTypes("status")
                     .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
                     .setFilter(filter)
-                    .setFrom(0).setSize(10).setExplain(true)
+                    .setFrom(0).setSize(size)
+                    .addFacet(FacetBuilders.termsFacet("tweeters").field("user.screen_name").size(10).facetFilter(filter))
+                    .addFacet(FacetBuilders.termsFacet("hashtags").field("hashtag.text").size(10).facetFilter(filter))
+                    .addFacet(FacetBuilders.termsFacet("mentions").field("mention.screen_name").size(10).facetFilter(filter))
+                    .addFacet(FacetBuilders.dateHistogramFacet("histogram").field("created_at").interval(interval).facetFilter(filter))
                     .addSort("created_at", SortOrder.DESC)
                     .execute()
                     .actionGet();
 
+            // Create the result JSON in the same format of the old 'search.twitter.com' API
             XContentBuilder builder = XContentFactory.jsonBuilder();
             builder.startObject();
             builder.field("completed_in", ((float)response.tookInMillis() / 1000));
-            if (response.hits().totalHits() > 0) {
+            if (response.hits().getHits().length > 0) {
                 builder.field("max_id", Long.decode(response.hits().getAt(0).id()).longValue());
                 builder.field("max_id_str", response.hits().getAt(0).id());
             }
@@ -313,6 +360,34 @@ public class TwitterSearchAction extends BaseRestHandler {
                 builder.endObject();
             }
             builder.endArray();
+
+            // We also add facet information: the 'search.twitter.api' doesn't return this, but ElasticSearch can
+            builder.startObject("facets");
+            for (Facet facet : response.getFacets()) {
+                builder.startObject(facet.getName());
+                builder.field("_type", facet.getType());
+                if (facet instanceof TermsFacet) {
+                    builder.startArray("terms");
+                    for (TermsFacet.Entry entry : (TermsFacet)facet) {
+                        builder.startObject();
+                        builder.field("term", entry.term());
+                        builder.field("count", entry.count());
+                        builder.endObject();
+                    }
+                    builder.endArray();
+                } else if (facet instanceof DateHistogramFacet) {
+                    builder.startArray("entries");
+                    for (DateHistogramFacet.Entry entry : (DateHistogramFacet)facet) {
+                        builder.startObject();
+                        builder.field("time", entry.getTime());
+                        builder.field("count", entry.count());
+                        builder.endObject();
+                    }
+                    builder.endArray();
+                }
+                builder.endObject();
+            }
+            builder.endObject();
             builder.endObject();
             channel.sendResponse(new XContentRestResponse(request, OK, builder));
 
@@ -347,6 +422,10 @@ public class TwitterSearchAction extends BaseRestHandler {
         }
     }
 
+    /**
+     * Main entrypoint for this Rest Handler: it dispatches the request to the
+     * corresponding method.
+     */
     public void handleRequest(final RestRequest request, final RestChannel channel) {
         final String index = request.hasParam("index") ? request.param("index") : "";
         final String id = request.hasParam("id") ? request.param("id") : "";
