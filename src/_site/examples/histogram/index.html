@@ -1,0 +1,179 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <title>Twitter River Demo</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <link rel="stylesheet" type="text/css" href="css/smoothness/jquery-ui-1.8.18.custom.css">
+  <link rel="stylesheet" type="text/css" href="css/jquery.jqplot.min.css" />
+  <link rel="stylesheet" type="text/css" href="css/ui.jqgrid.css" />
+  
+  <!-- Load JS libraries -->
+  <script type="text/javascript" language="javascript" src="lib/jquery-1.7.1.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/jquery.jqGrid.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/jquery-ui-1.8.18.custom.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/jshashtable-2.1.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/jquery.numberformatter-1.2.2.jsmin.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/date-fr-FR.js"></script>
+
+  <script type="text/javascript" language="javascript" src="lib/jquery.jqplot.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.pieRenderer.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.pointLabels.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.dateAxisRenderer.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.barRenderer.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.categoryAxisRenderer.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.ohlcRenderer.min.js"></script>
+  <script type="text/javascript" language="javascript" src="lib/plugins/jqplot.highlighter.min.js"></script>  
+  
+  <script type="text/javascript">
+    $.support.cors = true;
+  
+    /*
+     * Transform a histodate facet collection to an array of values
+     */
+    function histoToArray(facet) {
+      s = [];
+
+      for (i=0; i < facet.length; i++) {
+        s[i] = [new Date(facet[i].time), facet[i].count];
+      }
+      return s;
+    }
+
+    function createHistogram(divname, title, start, stop, interval, facet) {
+      // Compute serie
+      if (facet.length == 0) {
+        return;
+      }
+      var s1 = histoToArray(facet);
+
+      var tickInterval;
+      var numberTicks = facet.length + 2;
+      var formatDate;
+      var min = new Date(facet[0].time);
+      var max = new Date(facet[facet.length-1].time);
+      var showLabel = true;
+
+      var resolution = (max-min)/1000/60;
+      
+      if (interval == "day") {
+        min.add(-1).days();
+        max.add(1).days();
+        tickInterval = '1 day';
+        resolution = resolution / 60 / 24;
+        formatDate = '%d-%m';
+        numberTicks = 7;
+      }
+
+      if (interval == "hour") {
+        min.add(-1).hours();
+        max.add(1).hours();
+        tickInterval = '1 hour';
+        resolution = resolution / 60;
+        formatDate = '%H:%M';
+        numberTicks = 24;
+        showLabel = false;
+      }
+
+      if (interval == "minute") {
+        min.add(-1).minutes();
+        max.add(1).minutes();
+        tickInterval = '1 minute';
+        formatDate = '%H:%M';
+        showLabel = false;
+        numberTicks = 60;
+      }
+
+      
+      if (resolution != 0) {
+        barWidth = ($('#' + divname).width() - 100) / (resolution + 2);
+      } else {
+        barWidth = $('#' + divname).width() - 100;
+      }
+        
+      // $(divname).remove();
+      obj = $.jqplot(divname, [s1], {
+        title: title,
+        seriesDefaults:{
+          renderer: $.jqplot.BarRenderer,
+          pointLabels: {show: false},
+          rendererOptions: {
+            barWidth: barWidth,
+            varyBarColor: false
+          },          
+        },
+        axes: {
+          // Use a category axis on the x axis and use our custom ticks.
+          xaxis: {
+            renderer: $.jqplot.DateAxisRenderer, 
+            tickOptions: {formatString: formatDate, showLabel: showLabel},
+            tickInterval: tickInterval,
+            numberTicks: numberTicks,
+            min: min, 
+            max: max
+          },
+          // Pad the y axis just a little so bars can get close to, but
+          // not touch, the grid boundaries.  1.2 is the default padding.
+          yaxis: {
+            tickOptions: {formatString: '%d'}
+          }
+        },
+
+        cursor: {
+          showTooltip: true
+        }
+      });
+      obj.replot();
+
+      return obj;
+    }
+
+    $.urlParam = function(name){
+      var results = new RegExp('[\\?&]' + name + '=([^&#]*)').exec(window.location.href);
+       return results[1] || 0;
+    }
+
+    function getHistogram(id, title, start, stop, interval) {
+      $.ajax({
+        url: "http://localhost:9200/_twittersearch/twitter/" + $.urlParam('id') + "/tweets?interval=" + interval + "&start=" + start + "&stop=" + stop,
+        type: 'GET',
+        dataType : 'json',
+        processData: false,
+        success: function(json, statusText, xhr) {
+                   createHistogram(id, title, start, stop, interval, json.facets.histogram.entries);
+                 },
+        error:   function(xhr, message, error) {
+                   console.error("Error while loading data from ElasticSearch", message);
+                 }
+      });
+    }
+
+    function tweetsPerMinute() {
+      var now = new Date().getTime();
+      getHistogram('chart1', 'Tweets per minute, last hour', now - (1000 * 60 * 60), now, 'minute');
+    }
+
+    function tweetsPerHour() {
+      var now = new Date().getTime();
+      getHistogram('chart2', 'Tweets per hour, last day', now - (1000 * 60 * 60 * 24), now, 'hour');
+    }
+
+    function tweetsPerDay() {
+      var now = new Date().getTime();
+      getHistogram('chart3', 'Tweets per day, last week', now - (1000 * 60 * 60 * 24 * 7), now, 'day');
+    }
+
+    $( function() { 
+      $.jqplot.config.enablePlugins = true;
+      tweetsPerMinute();
+      tweetsPerHour();
+      tweetsPerDay();
+      setInterval("tweetsPerMinute();", 5000);
+    });
+    </script>
+  </head>
+  <body>
+    <div id="chart1" style="height:300px;width:300px; "></div>
+    <div id="chart2" style="height:300px;width:300px; "></div>
+    <div id="chart3" style="height:300px;width:300px; "></div>
+  </body>
+</html>
