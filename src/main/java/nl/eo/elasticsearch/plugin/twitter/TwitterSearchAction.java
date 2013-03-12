@@ -1,6 +1,7 @@
 package nl.eo.elasticsearch.plugin.twitter;
 
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
+import org.elasticsearch.action.admin.indices.mapping.delete.DeleteMappingResponse;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
@@ -82,12 +83,13 @@ public class TwitterSearchAction extends BaseRestHandler {
      * Update the Twitter River (with given name), because apparently our configuration of hashtags or 
      * usernames has changed (by an update, delete or insert).
      */
-    private void updateRiver(String index) {
+    private void updateRiver(final String index) {
         logger.info("Updating river");
         GetResponse taskResponse = client.prepareGet(index, "twitterconfig", "_meta").execute().actionGet();
-        Map<String, Object> twitterConfig = taskResponse.getSource();
 
+        final Map<String, Object> twitterConfig = taskResponse.getSource();
         final SearchRequest searchRequest = new SearchRequest(index);
+
         searchRequest.types(TYPE);
         searchRequest.listenerThreaded(false);
         SearchResponse searchResponse = client.prepareSearch(index).setTypes(TYPE).setSize(10000).execute().actionGet();
@@ -107,22 +109,43 @@ public class TwitterSearchAction extends BaseRestHandler {
         TwitterUtil tu = new TwitterUtil(twitterConfig);
         List<String> toFollowIDs = Arrays.asList(tu.getUserIds(toFollow.toArray(new String[0])));
 
-        ClusterStateResponse resp = client.admin().cluster().prepareState().execute().actionGet();
-        Map mappings = resp.state().metaData().index("_river").mappings();
-        if (mappings.containsKey("twitter")) {
-            logger.info("Old twitter river exists, we will delete it");
-            client.admin().indices().prepareDeleteMapping("_river").setType("twitter").execute().actionGet();
-            logger.info("Removed old river");
-        } else {
-            logger.info("No old twitter river, so no need to delete the mapping");
-        }
-
-        // Put the entire twitter configuration (partially recovered from the _meta key, partially created by our logic)
-        // into a hashmap
         Map t = new HashMap();
         t.put("tracks", Strings.collectionToCommaDelimitedString(toTrack));
         t.put("follow", Strings.collectionToCommaDelimitedString(toFollowIDs));
         twitterConfig.put("filter", t);
+
+        ClusterStateResponse resp = client.admin().cluster().prepareState().execute().actionGet();
+        Map mappings = resp.state().metaData().index("_river").mappings();
+
+        if (mappings.containsKey("twitter")) {
+            logger.info("Old twitter river exists, we will delete it");
+            client.admin().indices().prepareDeleteMapping("_river")
+                .setType("twitter")
+                .setListenerThreaded(false)
+                .execute(new ActionListener<DeleteMappingResponse>() {
+                @Override public void onResponse(DeleteMappingResponse response) {
+                    try {
+                        logger.info("Removed old river");
+                        addRiver(twitterConfig, index);
+                    } catch (Exception e) {
+                        onFailure(e);
+                    }
+                }
+
+                @Override public void onFailure(Throwable e) {
+                    logger.error("Error while removing river", e);
+                }
+            });
+        } else {
+            logger.info("No old twitter river, so no need to delete the mapping");
+            addRiver(twitterConfig, index);
+        }
+
+    }
+
+    private void addRiver(Map twitterConfig, String index) {
+        // Put the entire twitter configuration (partially recovered from the _meta key, partially created by our logic)
+        // into a hashmap
 
         try {
             XContentBuilder builder = XContentFactory.jsonBuilder()
@@ -138,13 +161,15 @@ public class TwitterSearchAction extends BaseRestHandler {
 
             IndexResponse response2 = client.prepareIndex("_river", "twitter", "_meta")
                 .setSource(builder)
-                .setRefresh(true)
+                .setOperationThreaded(false)
+                .setListenerThreaded(false)
                 .execute().actionGet();
 
             logger.info("Created new river");
         } catch (IOException e) {
             logger.error("Exception while building new river: {}", e);
         }
+
     }
 
     private void historicSearch(String id) {
