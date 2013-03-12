@@ -83,6 +83,16 @@
         numberTicks = 60;
       }
 
+      if (interval == "second") {
+        min.add(-1).seconds();
+        max.add(1).seconds();
+        tickInterval = '1 second';
+        formatDate = '%M:s';
+        showLabel = false;
+        numberTicks = 60;
+        resolution = resolution * 60;
+      }
+
       
       if (resolution != 0) {
         barWidth = ($('#' + divname).width() - 100) / (resolution + 2);
@@ -134,7 +144,7 @@
 
     function getHistogram(id, title, start, stop, interval) {
       $.ajax({
-        url: "http://localhost:9200/_twittersearch/twitter/" + $.urlParam('id') + "/tweets?interval=" + interval + "&start=" + start + "&stop=" + stop,
+        url: "http://localhost:9200/_twittersearch/twitter/" + $.urlParam('id') + "/tweets?interval=" + interval + "&start=" + (1000 * start) + "&stop=" + (1000 * stop),
         type: 'GET',
         dataType : 'json',
         processData: false,
@@ -147,31 +157,39 @@
       });
     }
 
+    function tweetsPerSecond() {
+      var now = Math.floor(1 + new Date().getTime() / 1000);
+      getHistogram('chart0', 'Tweets per second, last minute', now - 60, now, 'second');
+    }
+
     function tweetsPerMinute() {
-      var now = new Date().getTime();
-      getHistogram('chart1', 'Tweets per minute, last hour', now - (1000 * 60 * 60), now, 'minute');
+      var now = 60 * Math.floor(1 + new Date().getTime() / (60 * 1000));
+      getHistogram('chart1', 'Tweets per minute, last hour', now - (60 * 60), now, 'minute');
     }
 
     function tweetsPerHour() {
-      var now = new Date().getTime();
-      getHistogram('chart2', 'Tweets per hour, last day', now - (1000 * 60 * 60 * 24), now, 'hour');
+      var now = 60 * 60 * Math.floor(1 + new Date().getTime() / (60 * 60 * 1000));
+      getHistogram('chart2', 'Tweets per hour, last day', now - (60 * 60 * 24), now, 'hour');
     }
 
     function tweetsPerDay() {
-      var now = new Date().getTime();
-      getHistogram('chart3', 'Tweets per day, last week', now - (1000 * 60 * 60 * 24 * 7), now, 'day');
+      var now = 24 * 60 * 60 * Math.floor(1 + new Date().getTime() / (24 * 60 * 60 * 1000));
+      getHistogram('chart3', 'Tweets per day, last week', now - (60 * 60 * 24 * 7), now, 'day');
     }
 
     $( function() { 
       $.jqplot.config.enablePlugins = true;
+      tweetsPerSecond();
       tweetsPerMinute();
       tweetsPerHour();
       tweetsPerDay();
       setInterval("tweetsPerMinute();", 5000);
+      setInterval("tweetsPerSecond();", 1000);
     });
     </script>
   </head>
   <body>
+    <div id="chart0" style="height:300px;width:300px; "></div>
     <div id="chart1" style="height:300px;width:300px; "></div>
     <div id="chart2" style="height:300px;width:300px; "></div>
     <div id="chart3" style="height:300px;width:300px; "></div>
