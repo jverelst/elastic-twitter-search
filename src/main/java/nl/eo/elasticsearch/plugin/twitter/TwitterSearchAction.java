@@ -102,9 +102,12 @@ public class TwitterSearchAction extends BaseRestHandler {
             String follow[] = Strings.commaDelimitedListToStringArray((String)source.get("follow"));
             String track[] = Strings.commaDelimitedListToStringArray((String)source.get("track"));
             toFollow.addAll(Arrays.asList(follow));
-            toTrack.addAll(Arrays.asList(track));
+            for (int i=0; i<track.length; i++) {
+                toTrack.add("#" + track[i]);
+            }
         }
         logger.info("Tracking userids {} and keywords {}", toFollow, toTrack);
+        final boolean startRiver = toFollow.size() > 0 || toTrack.size() > 0;
 
         TwitterUtil tu = new TwitterUtil(twitterConfig);
         List<String> toFollowIDs = Arrays.asList(tu.getUserIds(toFollow.toArray(new String[0])));
@@ -126,7 +129,11 @@ public class TwitterSearchAction extends BaseRestHandler {
                 @Override public void onResponse(DeleteMappingResponse response) {
                     try {
                         logger.info("Removed old river");
-                        addRiver(twitterConfig, index);
+                        if (startRiver) {
+                            addRiver(twitterConfig, index);
+                        } else {
+                            logger.info("No keywords to track and no people to follow: skipping river creation");
+                        }
                     } catch (Exception e) {
                         onFailure(e);
                     }
@@ -138,7 +145,11 @@ public class TwitterSearchAction extends BaseRestHandler {
             });
         } else {
             logger.info("No old twitter river, so no need to delete the mapping");
-            addRiver(twitterConfig, index);
+            if (startRiver) {
+                addRiver(twitterConfig, index);
+            } else {
+                logger.info("No keywords to track and no people to follow: skipping river creation");
+            }
         }
 
     }
@@ -354,6 +365,8 @@ public class TwitterSearchAction extends BaseRestHandler {
                     .addFacet(FacetBuilders.termsFacet("tweeters").field("user.screen_name").size(10).facetFilter(filter))
                     .addFacet(FacetBuilders.termsFacet("hashtags").field("hashtag.text").size(10).facetFilter(filter))
                     .addFacet(FacetBuilders.termsFacet("mentions").field("mention.screen_name").size(10).facetFilter(filter))
+                    .addFacet(FacetBuilders.termsFacet("retweetedusers").field("retweet.user_screen_name").size(10).facetFilter(filter))
+                    .addFacet(FacetBuilders.termsFacet("retweetedstatus").field("retweet.id").size(10).facetFilter(filter))
                     .addFacet(FacetBuilders.dateHistogramFacet("histogram").field("created_at").interval(interval).facetFilter(filter))
                     .addSort("created_at", SortOrder.DESC)
                     .execute()
@@ -378,7 +391,7 @@ public class TwitterSearchAction extends BaseRestHandler {
                 builder.field("from_user_name", ((Map)source.get("user")).get("name"));
                 builder.field("profile_image_url", ((Map)source.get("user")).get("profile_image_url"));
                 builder.field("profile_image_url_https", ((Map)source.get("user")).get("profile_image_url_https"));
-                builder.field("id", Long.decode(hit.id()).longValue());
+                builder.field("id", Long.parseLong(hit.id(), 10));
                 builder.field("id_str", hit.id());
                 builder.field("text", source.get("text"));
                 builder.field("source", source.get("source"));
