@@ -1444,7 +1444,7 @@ JTA_I18N.addResourceBundle('jTweetsAnywhere', 'en',
 
 		if (options.searchParams)
 		{
-                        url += '//localhost:9200/_twittersearch/twitter/' + options.searchParams + '/tweets/?';
+                        url += '//' + location.host + '/_twittersearch/twitter/' + options.searchParams + '/tweets/?';
 		}
 		else if (options.list)
 		{

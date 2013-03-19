@@ -144,7 +144,7 @@
 
     function getHistogram(id, title, start, stop, interval) {
       $.ajax({
-        url: "http://localhost:9200/_twittersearch/twitter/" + $.urlParam('id') + "/tweets?interval=" + interval + "&start=" + (1000 * start) + "&stop=" + (1000 * stop),
+        url: "http://" + location.host + "/_twittersearch/twitter/" + $.urlParam('id') + "/tweets?interval=" + interval + "&start=" + (1000 * start) + "&stop=" + (1000 * stop),
         type: 'GET',
         dataType : 'json',
         processData: false,
