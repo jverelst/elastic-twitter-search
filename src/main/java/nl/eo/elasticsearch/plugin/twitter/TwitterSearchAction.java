@@ -58,6 +58,7 @@ public class TwitterSearchAction extends BaseRestHandler {
 
     @Inject public TwitterSearchAction(Settings settings, Client client, RestController controller) {
         super(settings, client);
+        logger.info("Initializing Twitter Search plugin");
         // Define REST endpoints
 
         // Get a list of all tasks, mapped to 'listTasks'
@@ -376,6 +377,7 @@ public class TwitterSearchAction extends BaseRestHandler {
             XContentBuilder builder = XContentFactory.jsonBuilder();
             builder.startObject();
             builder.field("completed_in", ((float)response.tookInMillis() / 1000));
+            builder.field("current_time", System.currentTimeMillis());
             if (response.hits().getHits().length > 0) {
                 builder.field("max_id", Long.decode(response.hits().getAt(0).id()).longValue());
                 builder.field("max_id_str", response.hits().getAt(0).id());
