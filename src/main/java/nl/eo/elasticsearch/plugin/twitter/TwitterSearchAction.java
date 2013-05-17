@@ -37,12 +37,11 @@ import org.elasticsearch.search.facet.Facet;
 import org.elasticsearch.search.facet.FacetBuilders;
 import org.elasticsearch.search.facet.datehistogram.DateHistogramFacet;
 import org.elasticsearch.search.facet.terms.TermsFacet;
-
 import org.elasticsearch.rest.*;
 
 import java.io.IOException;
 import java.util.*;
-
+import java.text.SimpleDateFormat;
 
 import static org.elasticsearch.rest.RestRequest.Method.GET;
 import static org.elasticsearch.rest.RestRequest.Method.POST;
@@ -309,9 +308,12 @@ public class TwitterSearchAction extends BaseRestHandler {
         String interval = request.hasParam("interval") ? request.param("interval") : "day";
         long start = request.hasParam("start") ? Long.decode(request.param("start")).longValue() : 0;
         long stop = request.hasParam("stop") ? Long.decode(request.param("stop")).longValue() : 0;
+        int seconds = request.hasParam("seconds") ? Integer.parseInt(request.param("seconds")) : 0;
         int size = request.hasParam("size") ? Integer.parseInt(request.param("size")) : 10;
         long max_id = request.hasParam("max_id") ? Long.decode(request.param("max_id")).longValue() : 0;
         long page = request.hasParam("page") ? Long.decode(request.param("page")).longValue() : 0;
+
+        long currentTime = System.currentTimeMillis();
 
         try {
             // The elasticsearch query will be in the form:
@@ -333,12 +335,12 @@ public class TwitterSearchAction extends BaseRestHandler {
 
             // Second: which screennames do we remove from the searchresults?
             if (block != null && !"".equals(block)) {
-              logger.info("Adding blocklist: [{}]", block);
-              mustMatch.add(
-                FilterBuilders.notFilter(
-                  FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(block))
-                )
-              );
+                logger.info("Adding blocklist: [{}]", block);
+                mustMatch.add(
+                    FilterBuilders.notFilter(
+                        FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(block))
+                    )
+                );
             }
 
             // Third: maybe we only need a specific timespan
@@ -347,6 +349,14 @@ public class TwitterSearchAction extends BaseRestHandler {
             }
             if (stop > 0) {
                 mustMatch.add(FilterBuilders.rangeFilter("created_at").to(stop));
+            }
+
+
+            // If only the 'seconds' parameter is given, we want to return all tweets from the last X seconds
+            // We max it on 10 tweets per second, to prevent interface overload
+            if (seconds > 0) {
+                mustMatch.add(FilterBuilders.rangeFilter("created_at").from(currentTime - (1000 * seconds)));
+                size = seconds * 10;
             }
 
             // We do NOT support paging! So if a (legacy) widget provides a page-parameter, we just don't return any data
@@ -373,11 +383,13 @@ public class TwitterSearchAction extends BaseRestHandler {
                     .execute()
                     .actionGet();
 
+
             // Create the result JSON in the same format of the old 'search.twitter.com' API
             XContentBuilder builder = XContentFactory.jsonBuilder();
             builder.startObject();
             builder.field("completed_in", ((float)response.tookInMillis() / 1000));
-            builder.field("current_time", System.currentTimeMillis());
+            builder.field("current_time", currentTime);
+
             if (response.hits().getHits().length > 0) {
                 builder.field("max_id", Long.decode(response.hits().getAt(0).id()).longValue());
                 builder.field("max_id_str", response.hits().getAt(0).id());
@@ -429,8 +441,22 @@ public class TwitterSearchAction extends BaseRestHandler {
             }
             builder.endObject();
             builder.endObject();
-            channel.sendResponse(new XContentRestResponse(request, OK, builder));
 
+
+            RestResponse restResponse = new XContentRestResponse(request, OK, builder);
+            /*
+              This code requires the very latest ElasticSearch version; not usable right now
+
+              int cacheTime = 10;
+              SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz");
+            
+              restResponse.addHeader("Cache-Control", "max-age=" + cacheTime);
+              restResponse.addHeader("Expires", format.format(new Date(currentTime + cacheTime * 1000)));
+              restResponse.addHeader("Last-Modified", format.format(new Date(currentTime)));
+              restResponse.addHeader("Pragma", "public");
+            */
+
+            channel.sendResponse(restResponse);
         } catch (Exception e) {
             e.printStackTrace();
             try {
