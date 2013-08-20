@@ -3,6 +3,7 @@ package nl.eo.elasticsearch.plugin.twitter;
 import org.elasticsearch.common.xcontent.support.XContentMapValues;
 import java.util.Map;
 
+import java.util.logging.Logger;
 
 import twitter4j.*;
 import twitter4j.conf.ConfigurationBuilder;
@@ -10,6 +11,8 @@ import twitter4j.conf.ConfigurationBuilder;
 
 public class TwitterUtil {
 
+	private final static Logger logger = Logger.getLogger("TwitterUtil"); 
+	
     private ConfigurationBuilder cb;
 
     public TwitterUtil(Map<String, Object> twitterSettings) {
@@ -87,12 +90,12 @@ public class TwitterUtil {
     public String[] getUserIds(String[] screennames) {
         if (screennames.length > 0) {
             try {
-                String[] retval = new String[screennames.length];
                 Twitter twitter = new TwitterFactory(cb.build()).getInstance();
                 ResponseList<User> users = twitter.lookupUsers(screennames);
+                String[] retval = new String[users.size()];
                 for (int i=0; i<users.size(); i++) {
                     User user = users.get(i);
-                    retval[i] = "" + user.getId();
+					retval[i] = "" + user.getId();
                 }
                 return retval;
             } catch (Exception e) {

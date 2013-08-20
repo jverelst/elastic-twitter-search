@@ -108,7 +108,7 @@ public class TwitterSearchAction extends BaseRestHandler {
         }
         logger.info("Tracking userids {} and keywords {}", toFollow, toTrack);
         final boolean startRiver = toFollow.size() > 0 || toTrack.size() > 0;
-
+		
         TwitterUtil tu = new TwitterUtil(twitterConfig);
         List<String> toFollowIDs = Arrays.asList(tu.getUserIds(toFollow.toArray(new String[0])));
 
