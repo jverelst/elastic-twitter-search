@@ -99,8 +99,8 @@ public class TwitterSearchAction extends BaseRestHandler {
 
         for (SearchHit hit : searchResponse.hits()) {
             Map<String, Object> source = hit.getSource();
-            String follow[] = Strings.commaDelimitedListToStringArray((String)source.get("follow"));
-            String track[] = Strings.commaDelimitedListToStringArray((String)source.get("track"));
+            String follow[] = Strings.commaDelimitedListToStringArray(((String)source.get("follow")).toLowerCase());
+            String track[] = Strings.commaDelimitedListToStringArray(((String)source.get("track")).toLowerCase());
             toFollow.addAll(Arrays.asList(follow));
             for (int i=0; i<track.length; i++) {
                 toTrack.add("#" + track[i]);
