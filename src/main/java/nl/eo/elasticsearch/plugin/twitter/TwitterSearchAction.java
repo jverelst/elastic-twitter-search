@@ -128,7 +128,11 @@ public class TwitterSearchAction extends BaseRestHandler {
                 .execute(new ActionListener<DeleteMappingResponse>() {
                 @Override public void onResponse(DeleteMappingResponse response) {
                     try {
-                        logger.info("Removed old river");
+                        logger.info("Removing old river");
+                        // WARNING: At this point the "old river" is still in the process of being removed. 
+                        // usually the removal takes approx less than 20 ms
+                        // ... let's wait for 250 milliseconds, before we start a new river. 
+                        Thread.sleep(250);
                         if (startRiver) {
                             addRiver(twitterConfig, index);
                         } else {
