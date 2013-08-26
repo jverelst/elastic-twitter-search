@@ -329,22 +329,33 @@ public class TwitterSearchAction extends BaseRestHandler {
 
             // First: which hashtags & screennames do we follow?
             ArrayList<FilterBuilder> mayMatch = new ArrayList<FilterBuilder>();
+
             if (follow != null && !"".equals(follow)) {
-              mayMatch.add(FilterBuilders.termFilter("user.id", Strings.commaDelimitedListToStringArray(follow)));
+              String[] followArray = Strings.commaDelimitedListToStringArray(follow);
+              for( int i = 0; i <= followArray.length - 1; i++) {
+				    mayMatch.add(FilterBuilders.termFilter("user.id", followArray[i]));
+			  }
             }
             if (track != null && !"".equals(track)) {
-              mayMatch.add(FilterBuilders.termFilter("hashtag.text", Strings.commaDelimitedListToStringArray(track)));
+              String[] trackArray = Strings.commaDelimitedListToStringArray(track);
+              for( int i = 0; i <= trackArray.length - 1; i++) {
+				    mayMatch.add(FilterBuilders.termFilter("hashtag.text", trackArray[i].toLowerCase()));
+			  }
             }
             mustMatch.add(FilterBuilders.orFilter(mayMatch.toArray(new FilterBuilder[0])));
 
             // Second: which screennames do we remove from the searchresults?
             if (block != null && !"".equals(block)) {
                 logger.info("Adding blocklist: [{}]", block);
-                mustMatch.add(
-                    FilterBuilders.notFilter(
-                        FilterBuilders.termFilter("user.screen_name", Strings.commaDelimitedListToStringArray(block))
-                    )
-                );
+                String[] blockArray = Strings.commaDelimitedListToStringArray(block);
+              	for( int i = 0; i <= blockArray.length - 1; i++) {
+				    //mayMatch.add(FilterBuilders.termFilter("user.screen_name", blockArray[i].toLowerCase()));
+				    mustMatch.add(
+                    	FilterBuilders.notFilter(
+                        	FilterBuilders.termFilter("user.screen_name", blockArray[i].toLowerCase())
+                        )
+                	);
+			  	}
             }
 
             // Third: maybe we only need a specific timespan
