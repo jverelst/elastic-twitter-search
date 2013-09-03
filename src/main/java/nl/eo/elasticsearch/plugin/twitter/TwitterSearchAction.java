@@ -103,7 +103,9 @@ public class TwitterSearchAction extends BaseRestHandler {
             String track[] = Strings.commaDelimitedListToStringArray(((String)source.get("track")).toLowerCase());
             toFollow.addAll(Arrays.asList(follow));
             for (int i=0; i<track.length; i++) {
-                toTrack.add("#" + track[i]);
+            	// First, strip # and leading/trailing whitespaces.
+            	String singleTrack = track[i].replace("#","").trim();
+                toTrack.add("#" + singleTrack);
             }
         }
         logger.info("Tracking userids {} and keywords {}", toFollow, toTrack);
@@ -339,7 +341,9 @@ public class TwitterSearchAction extends BaseRestHandler {
             if (track != null && !"".equals(track)) {
               String[] trackArray = Strings.commaDelimitedListToStringArray(track);
               for( int i = 0; i <= trackArray.length - 1; i++) {
-				    mayMatch.add(FilterBuilders.termFilter("hashtag.text", trackArray[i].toLowerCase()));
+              		// Strip the possible "#" from the trackArray
+              		String singleTrack =  trackArray[i].replace("#","").trim().toLowerCase();
+				    mayMatch.add(FilterBuilders.termFilter("hashtag.text", singleTrack));
 			  }
             }
             mustMatch.add(FilterBuilders.orFilter(mayMatch.toArray(new FilterBuilder[0])));

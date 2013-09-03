@@ -90,6 +90,9 @@ public class TwitterUtil {
     public String[] getUserIds(String[] screennames) {
         if (screennames.length > 0) {
             try {
+            	for (int i=0; i<screennames.length; i++) {
+            		screennames[i] = screennames[i].replace("@","");
+            	}
                 Twitter twitter = new TwitterFactory(cb.build()).getInstance();
                 ResponseList<User> users = twitter.lookupUsers(screennames);
                 String[] retval = new String[users.size()];
